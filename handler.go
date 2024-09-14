@@ -2,15 +2,46 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"learnfx/domain/entity"
 	"learnfx/domain/service"
+	"learnfx/kitex_gen/learn/fx/item"
+	"learnfx/kitex_gen/learn/fx/item/learnfxservice"
+
+	"github.com/cloudwego/kitex/server"
+	"go.uber.org/fx"
 )
+
+func NewRpcServer(rpcSrv item.LearnFxService) server.Server {
+	return learnfxservice.NewServer(rpcSrv)
+}
+
+func startServer(svr server.Server, lc fx.Lifecycle) {
+	// 通过lifecycle异步启动，不然invoke执行在onstart之前
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			fmt.Println("start rpc server")
+			// 异步启动避免阻塞fx启动，依赖srv.Run的panic
+			go func() {
+				if err := svr.Run(); err != nil {
+					fmt.Printf("fail to run server: %v", err)
+					panic(err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			fmt.Println("shutdown rpc server")
+			return svr.Stop()
+		},
+	})
+}
 
 type LearnFxServiceImpl struct {
 	ItemDomainService service.ItemDomainService
 }
 
-func NewLearnFxServiceImpl(s service.ItemDomainService) service.ItemDomainService {
+func NewLearnFxServiceImpl(s service.ItemDomainService) item.LearnFxService {
 	return &LearnFxServiceImpl{
 		ItemDomainService: s,
 	}
